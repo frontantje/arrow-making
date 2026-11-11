@@ -8,6 +8,7 @@
     "build": "npm run lint && tsc && vite build",
     "lint": "eslint .",
     "dev": "vite",
+    "dev:wifi": "vite --host",
     "preview": "vite preview",
     "version": "node scripts/changelog.mjs && git add CHANGELOG.md"
   },

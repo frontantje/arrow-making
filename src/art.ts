@@ -3,7 +3,7 @@ import { Assets, Graphics, Rectangle, Renderer, Texture } from "pixi.js";
 /** Size of one map tile (and one creature) in art pixels. */
 export const TILE = 16;
 
-type Shape = "tile" | "grass" | "creature";
+type Shape = "tile" | "grass" | "rock" | "square" | "circle";
 type ArtSpec = { file: string } | { color: number; shape: Shape };
 
 /**
@@ -19,14 +19,16 @@ export const ART = {
   tallGrass: { color: 0x3f9b46, shape: "grass" },
   wall: { color: 0x7d6f63, shape: "tile" },
   water: { color: 0x4a90d9, shape: "tile" },
+  rock: { color: 0x9a948c, shape: "rock" },
 
   // heroes
-  hero1: { color: 0xe8553e, shape: "creature" },
-  hero2: { color: 0x3e7be8, shape: "creature" },
-  hero3: { color: 0xe8c23e, shape: "creature" },
+  hero1: { color: 0xe8553e, shape: "square" },
+  hero2: { color: 0x3e7be8, shape: "square" },
+  hero3: { color: 0xe8c23e, shape: "square" },
+  hero4: { color: 0x8e3ee8, shape: "square" },
 
   // wild creatures
-  wild1: { color: 0xa05cd6, shape: "creature" },
+  wild1: { color: 0xa05cd6, shape: "circle" },
 } satisfies Record<string, ArtSpec>;
 
 export type ArtName = keyof typeof ART;
@@ -52,10 +54,17 @@ export function art(name: ArtName): Texture {
 function drawPlaceholder(renderer: Renderer, color: number, shape: Shape) {
   const g = new Graphics();
 
-  if (shape === "creature") {
-    g.rect(2, 3, 12, 12).fill(color); // body
+  if (shape === "square" || shape === "circle") {
+    // body: square for heroes, round for wild creatures
+    if (shape === "square") g.rect(2, 3, 12, 12).fill(color);
+    else g.circle(8, 9, 6.5).fill(color);
     g.rect(4, 6, 3, 3).rect(9, 6, 3, 3).fill(0xffffff); // eyes
     g.rect(5, 7, 2, 2).rect(10, 7, 2, 2).fill(0x000000); // pupils
+  } else if (shape === "rock") {
+    g.rect(0, 0, TILE, TILE).fill(0x9bd36a); // grass underneath
+    g.rect(3, 4, 10, 10).rect(2, 6, 12, 7).fill(color); // boulder
+    g.rect(4, 5, 4, 2).fill({ color: 0xffffff, alpha: 0.35 }); // shine
+    g.rect(3, 12, 10, 2).fill({ color: 0x000000, alpha: 0.25 }); // shadow
   } else {
     g.rect(0, 0, TILE, TILE).fill(color);
     // faint edge so you can see the grid

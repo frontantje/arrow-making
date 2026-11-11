@@ -4,31 +4,35 @@ import {
   Graphics,
   Rectangle,
   Sprite,
+  Text,
 } from "pixi.js";
 import { art, TILE } from "./art";
+import { wildCreatures, type WildCreature } from "./creatures";
 import {
   activeHero,
+  party,
+  setActiveHero,
   switchHero,
-  wildCreatures,
-  type Creature,
   type Hero,
-} from "./data";
+} from "./heroes";
 import type { Direction, Input } from "./input";
 import {
+  canEnter,
   findStart,
-  isWalkable,
   MAP,
   MAP_HEIGHT,
   MAP_WIDTH,
+  missingSkill,
   tileAt,
 } from "./map";
 import { PartyBar } from "./partyBar";
-import type { Scene } from "./scene";
+import { textStyle, type Scene } from "./scene";
+import { TEXT } from "./text";
 
-/** How many tiles the player walks per second. */
-const WALK_SPEED = 6;
 /** Chance (0 to 1) of meeting a wild creature on each step in tall grass. */
 const ENCOUNTER_CHANCE = 0.12;
+/** How long a message like "Kämpfer kann nicht schwimmen!" stays on screen, in seconds. */
+const MESSAGE_TIME = 2;
 
 const STEP: Record<Direction, [number, number]> = {
   up: [0, -1],
@@ -50,6 +54,8 @@ export class Overworld implements Scene {
   private player = new Sprite();
   private marker = new Graphics();
   private partyBar = new PartyBar();
+  private message = new Text({ text: "", style: textStyle });
+  private messageTime = 0;
   private shownHero: Hero | null = null;
 
   /** Where the player stands, in tiles. */
@@ -64,7 +70,7 @@ export class Overworld implements Scene {
 
   constructor(
     private input: Input,
-    private onEncounter: (wild: Creature) => void,
+    private onEncounter: (wild: WildCreature) => void,
   ) {
     MAP.forEach((row, y) =>
       [...row].forEach((_, x) => {
@@ -82,15 +88,16 @@ export class Overworld implements Scene {
     });
     this.world.addChild(this.marker, this.player);
     this.partyBar.position.set(12, 12);
-    this.view.addChild(this.world, this.partyBar);
+    this.message.anchor.set(0.5, 1);
+    this.view.addChild(this.world, this.partyBar, this.message);
 
     this.view.eventMode = "static";
     this.view.on("pointerdown", (e) => {
       this.steeringPointer = e.pointerId;
-      this.aimAt(e);
+      this.aimAt(e, true);
     });
     this.view.on("globalpointermove", (e) => {
-      if (e.pointerId === this.steeringPointer) this.aimAt(e);
+      if (e.pointerId === this.steeringPointer) this.aimAt(e, false);
     });
     const release = (e: FederatedPointerEvent) => {
       if (e.pointerId === this.steeringPointer) this.steeringPointer = null;
@@ -100,10 +107,11 @@ export class Overworld implements Scene {
 
   update(dt: number) {
     if (this.input.wasPressed("switch")) switchHero();
-    if (activeHero() !== this.shownHero) this.showHero();
+    if (activeHero() !== this.shownHero) this.changeHero();
 
     if (this.walking) {
-      this.walking.t += dt * WALK_SPEED;
+      // each hero walks at their own speed (at least 1 tile per second)
+      this.walking.t += dt * Math.max(1, activeHero().stats.speed);
       if (this.walking.t >= 1) {
         this.tile.x += this.walking.dx;
         this.tile.y += this.walking.dy;
@@ -129,12 +137,15 @@ export class Overworld implements Scene {
       const dir = keyDir ?? this.nextStepToTarget();
       if (dir) {
         const [dx, dy] = STEP[dir];
-        if (isWalkable(this.tile.x + dx, this.tile.y + dy)) {
-          this.walking = { dx, dy, t: 0 };
-        }
+        const x = this.tile.x + dx;
+        const y = this.tile.y + dy;
+        if (canEnter(x, y, activeHero())) this.walking = { dx, dy, t: 0 };
+        else this.explainBlocked(x, y);
       }
     }
 
+    this.messageTime = Math.max(0, this.messageTime - dt);
+    this.message.alpha = Math.min(1, this.messageTime / 0.3); // fade out
     this.placePlayer();
   }
 
@@ -143,27 +154,58 @@ export class Overworld implements Scene {
     this.view.hitArea = new Rectangle(0, 0, width, height);
     this.world.scale.set(pixelScale);
     this.partyBar.layout(pixelScale);
+    this.message.position.set(width / 2, height - 24);
     this.placePlayer();
   }
 
-  private showHero() {
-    this.shownHero = activeHero();
-    this.player.texture = art(this.shownHero.art);
+  /** Puts the newly picked hero in front, unless they can't be where we are. */
+  private changeHero() {
+    const hero = activeHero();
+    const spots = [this.tile];
+    if (this.walking) {
+      spots.push({
+        x: this.tile.x + this.walking.dx,
+        y: this.tile.y + this.walking.dy,
+      });
+    }
+    const missing = spots
+      .map((spot) => missingSkill(spot.x, spot.y, hero))
+      .find((skill) => skill !== null);
+    if (missing && this.shownHero) {
+      setActiveHero(party.indexOf(this.shownHero)); // switch back
+      this.say(TEXT.cannot(hero.name, missing));
+      return;
+    }
+    this.shownHero = hero;
+    this.player.texture = art(hero.art);
     this.partyBar.refresh();
   }
 
-  /** Sets the walk target to the tile under the finger (if you can stand there). */
-  private aimAt(e: FederatedPointerEvent) {
+  private say(text: string) {
+    this.message.text = text;
+    this.messageTime = MESSAGE_TIME;
+  }
+
+  /** If the hero is missing a skill to go there, say so. */
+  private explainBlocked(x: number, y: number) {
+    const hero = activeHero();
+    const missing = missingSkill(x, y, hero);
+    if (missing) this.say(TEXT.cannot(hero.name, missing));
+  }
+
+  /** Sets the walk target to the tile under the finger (if the hero can go there). */
+  private aimAt(e: FederatedPointerEvent, isTap: boolean) {
     const p = this.world.toLocal(e.global);
     const x = Math.floor(p.x / TILE);
     const y = Math.floor(p.y / TILE);
-    if (isWalkable(x, y)) this.target = { x, y };
+    if (canEnter(x, y, activeHero())) this.target = { x, y };
+    else if (isTap) this.explainBlocked(x, y);
   }
 
   private nextStepToTarget(): Direction | null {
     const { target, tile } = this;
     if (!target) return null;
-    const dir = firstStep(tile, target);
+    const dir = firstStep(tile, target, activeHero());
     if (!dir) this.target = null; // arrived, or can't get there
     return dir;
   }
@@ -198,10 +240,11 @@ function follow(player: number, view: number, mapSize: number) {
 }
 
 /**
- * The first step of the shortest walk from `from` to `to`, going around walls.
- * Returns null if you're already there or there's no way through.
+ * The first step of the shortest walk from `from` to `to` for this hero,
+ * going around anything they can't cross.
+ * Returns null if they're already there or there's no way through.
  */
-function firstStep(from: Point, to: Point): Direction | null {
+function firstStep(from: Point, to: Point, hero: Hero): Direction | null {
   const queue = [{ x: from.x, y: from.y, first: null as Direction | null }];
   const seen = new Set([`${from.x},${from.y}`]);
   for (const here of queue) {
@@ -209,7 +252,7 @@ function firstStep(from: Point, to: Point): Direction | null {
     for (const [dir, [dx, dy]] of Object.entries(STEP)) {
       const x = here.x + dx;
       const y = here.y + dy;
-      if (seen.has(`${x},${y}`) || !isWalkable(x, y)) continue;
+      if (seen.has(`${x},${y}`) || !canEnter(x, y, hero)) continue;
       seen.add(`${x},${y}`);
       queue.push({ x, y, first: here.first ?? (dir as Direction) });
     }

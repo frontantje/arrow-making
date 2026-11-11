@@ -1,18 +1,35 @@
 import { Container, Graphics, Rectangle, Sprite, Text } from "pixi.js";
-import { art } from "./art";
-import { activeHero, switchHero, type Creature, type Hero } from "./data";
+import { art, TILE } from "./art";
+import { xpReward, type WildCreature } from "./creatures";
+import {
+  activeHero,
+  gainXp,
+  LEVEL_UP_BONUS,
+  switchHero,
+  type Hero,
+  type StatName,
+} from "./heroes";
 import type { Input } from "./input";
 import { PartyBar } from "./partyBar";
 import { textStyle, type Scene } from "./scene";
+import { TEXT } from "./text";
 
+const ACTIONS = [
+  { id: "attack", label: TEXT.attackButton },
+  { id: "run", label: TEXT.runButton },
+] as const;
 const BUTTON_HEIGHT = 40;
 const BUTTON_GAP = 8;
 
 /**
- * A placeholder battle: pick a skill, see a message, done.
- * There's no HP or damage yet. How battles work is still to be invented!
+ * A simple battle: attack until the wild creature has no HP left, or run away.
+ * Each attack takes the hero's strength away from the creature's HP,
+ * so strong heroes win faster. Lucky heroes sometimes hit twice as hard.
+ * Switch heroes any time with the party bar.
+ * After a win, every hero who attacked gets EP and may reach a new level.
+ * The creature doesn't fight back yet. That's still to be invented!
  *
- * Touch: tap a skill button, tap anywhere to continue.
+ * Touch: tap a button, tap anywhere to continue.
  * Keyboard: up/down + Z to pick, X to run.
  */
 export class Battle implements Scene {
@@ -20,30 +37,47 @@ export class Battle implements Scene {
   private background = new Graphics();
   private foe: Sprite;
   private hero = new Sprite();
+  private hpBar = new Graphics();
+  private hpText = new Text({
+    text: "",
+    style: { ...textStyle, fontSize: 14 },
+  });
+  private hpBarArea = { x: 0, y: 0, width: 0 };
   private partyBar = new PartyBar();
   private message = new Text({ text: "", style: textStyle });
   private menu = new Container();
-  private buttons: Graphics[] = [];
+  private buttons: Graphics[];
   private buttonWidth = 300;
 
   private step: "intro" | "choose" | "outcome" = "intro";
   private cursor = 0;
+  private hp: number;
+  private maxHp: number;
   private shownHero: Hero | null = null;
+  /** Every hero who attacked in this battle. They all get EP if we win. */
+  private fighters = new Set<Hero>();
+  /** Messages still to show after the battle, one per tap. */
+  private afterBattle: string[] = [];
   /** Taps are remembered here and dealt with in update(). */
   private tapped: number | "screen" | null = null;
 
   constructor(
     private input: Input,
-    wild: Creature,
+    private wild: WildCreature,
     private onDone: () => void,
   ) {
+    this.maxHp = Math.max(1, wild.stats.hp);
+    this.hp = this.maxHp;
     this.foe = new Sprite(art(wild.art));
     this.foe.anchor.set(0.5, 1);
     this.hero.anchor.set(0.5, 1);
+    this.hpText.anchor.set(0.5, 1);
     this.view.addChild(
       this.background,
       this.foe,
       this.hero,
+      this.hpBar,
+      this.hpText,
       this.message,
       this.menu,
       this.partyBar,
@@ -51,7 +85,24 @@ export class Battle implements Scene {
     this.view.eventMode = "static";
     this.view.on("pointerdown", () => (this.tapped ??= "screen"));
 
-    this.message.text = `A ${wild.name} appeared!`;
+    this.buttons = ACTIONS.map(({ label }, i) => {
+      const background = new Graphics();
+      const text = new Text({ text: label, style: textStyle });
+      text.position.set(14, 7);
+      const button = new Container();
+      button.addChild(background, text);
+      button.y = i * (BUTTON_HEIGHT + BUTTON_GAP);
+      button.eventMode = "static";
+      button.cursor = "pointer";
+      button.on("pointerdown", (e) => {
+        e.stopPropagation();
+        this.tapped = i;
+      });
+      this.menu.addChild(button);
+      return background;
+    });
+
+    this.message.text = TEXT.appears(wild.name);
     this.menu.visible = false;
     this.showHero();
   }
@@ -68,7 +119,7 @@ export class Battle implements Scene {
       case "intro":
         if (tapped !== null || input.wasPressed("confirm")) {
           this.step = "choose";
-          this.message.text = `What will ${activeHero().name} do?`;
+          this.message.text = TEXT.whatWillDo(activeHero().name);
           this.menu.visible = true;
         }
         break;
@@ -83,7 +134,7 @@ export class Battle implements Scene {
 
         if (typeof tapped === "number") this.choose(tapped);
         else if (input.wasPressed("confirm")) this.choose(this.cursor);
-        else if (input.wasPressed("back")) this.choose(count - 1); // run
+        else if (input.wasPressed("back")) this.choose(1); // run
         break;
       }
 
@@ -93,7 +144,9 @@ export class Battle implements Scene {
           input.wasPressed("confirm") ||
           input.wasPressed("back")
         ) {
-          this.onDone();
+          const next = this.afterBattle.shift();
+          if (next) this.message.text = next;
+          else this.onDone();
         }
         break;
     }
@@ -124,10 +177,17 @@ export class Battle implements Scene {
       .fill(0x2b2b3a);
 
     const creatureScale = pixelScale * 2;
+    const creatureSize = TILE * creatureScale;
     this.foe.scale.set(creatureScale);
     this.foe.position.set(field.x + field.w * 0.7, field.y + field.h * 0.55);
     this.hero.scale.set(creatureScale);
     this.hero.position.set(field.x + field.w * 0.3, field.y + field.h * 0.85);
+    this.hpBarArea = {
+      x: this.foe.x - creatureSize / 2,
+      y: this.foe.y - creatureSize - 14,
+      width: creatureSize,
+    };
+    this.drawHpBar();
 
     this.buttonWidth = Math.min(panel.w - 32, 420);
     const left = panel.x + (panel.w - this.buttonWidth) / 2;
@@ -142,44 +202,79 @@ export class Battle implements Scene {
   }
 
   private choose(index: number) {
+    if (ACTIONS[index]?.id === "attack") {
+      this.attack();
+    } else {
+      this.message.text = TEXT.ranAway;
+      this.finish();
+    }
+  }
+
+  private attack() {
     const hero = activeHero();
-    const skill = hero.skills[index];
-    this.message.text = skill
-      ? `${hero.name} used ${skill}!`
-      : "Got away safely!";
+    this.fighters.add(hero);
+    const lucky = Math.random() < hero.stats.luck / 10;
+    const damage = Math.max(0, hero.stats.strength) * (lucky ? 2 : 1);
+    this.hp = Math.max(0, this.hp - damage);
+    this.drawHpBar();
+    this.message.text = lucky
+      ? TEXT.luckyHit(hero.name, damage)
+      : TEXT.attacks(hero.name, damage);
+    if (this.hp === 0) {
+      this.message.text += `\n${TEXT.defeated(this.wild.name)}`;
+      this.foe.alpha = 0.3;
+      this.giveXp();
+      this.finish();
+    }
+  }
+
+  /** Every hero who attacked gets EP, and maybe a new level. */
+  private giveXp() {
+    const xp = xpReward(this.wild);
+    if (xp <= 0) return;
+    const fighters = [...this.fighters];
+    this.afterBattle.push(
+      TEXT.gainedXp(
+        fighters.map((hero) => hero.name),
+        xp,
+      ),
+    );
+    const bonus = Object.entries(LEVEL_UP_BONUS)
+      .map(([stat, amount]) => TEXT.statBonus(stat as StatName, amount))
+      .join(", ");
+    for (const hero of fighters) {
+      for (const level of gainXp(hero, xp)) {
+        this.afterBattle.push(`${TEXT.levelUp(hero.name, level)}\n${bonus}`);
+      }
+    }
+    this.partyBar.refresh();
+  }
+
+  private finish() {
     this.menu.visible = false;
     this.step = "outcome";
   }
 
-  /** Shows the hero in front, and a button for each of their skills. */
   private showHero() {
     const hero = activeHero();
     this.shownHero = hero;
     this.hero.texture = art(hero.art);
     this.partyBar.refresh();
-    if (this.step === "choose")
-      this.message.text = `What will ${hero.name} do?`;
+    if (this.step === "choose") this.message.text = TEXT.whatWillDo(hero.name);
+  }
 
-    for (const old of this.menu.removeChildren())
-      old.destroy({ children: true });
-    this.cursor = 0;
-    this.buttons = [...hero.skills, "Run away"].map((label, i) => {
-      const background = new Graphics();
-      const text = new Text({ text: label, style: textStyle });
-      text.position.set(14, 7);
-      const button = new Container();
-      button.addChild(background, text);
-      button.y = i * (BUTTON_HEIGHT + BUTTON_GAP);
-      button.eventMode = "static";
-      button.cursor = "pointer";
-      button.on("pointerdown", (e) => {
-        e.stopPropagation();
-        this.tapped = i;
-      });
-      this.menu.addChild(button);
-      return background;
-    });
-    this.drawButtons();
+  private drawHpBar() {
+    const { x, y, width } = this.hpBarArea;
+    const share = this.hp / this.maxHp;
+    const color = share > 0.5 ? 0x4caf50 : share > 0.25 ? 0xf5c542 : 0xe53935;
+    this.hpBar
+      .clear()
+      .rect(x - 2, y - 2, width + 4, 12)
+      .fill({ color: 0x000000, alpha: 0.5 })
+      .rect(x, y, width * share, 8)
+      .fill(color);
+    this.hpText.text = TEXT.foeStatus(this.wild.level, this.hp, this.maxHp);
+    this.hpText.position.set(x + width / 2, y - 4);
   }
 
   private drawButtons() {

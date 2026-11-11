@@ -10,7 +10,7 @@ npm install
 npm run dev
 ```
 
-To play on a phone or tablet on the same Wi-Fi, run `npm run dev -- --host` and open the
+To play on a phone or tablet on the same Wi-Fi, run `npm run dev:wifi` and open the
 "Network" address it prints.
 
 ## Controls
@@ -19,8 +19,8 @@ To play on a phone or tablet on the same Wi-Fi, run `npm run dev -- --host` and 
 | ------------ | -------------------------------------------------- | ----------------- |
 | Walk         | Tap where to go, or hold and drag to lead the hero | Arrows / WASD     |
 | Switch hero  | Tap a hero in the top corner                       | Q / Tab           |
-| Use a skill  | Tap its button                                     | Up/Down, then Z   |
-| Run away     | Tap "Run away"                                     | X / Esc           |
+| Attack       | Tap "Angreifen"                                    | Up/Down, then Z   |
+| Run away     | Tap "Weglaufen"                                    | X / Esc           |
 | Next message | Tap anywhere                                       | Z / Enter / Space |
 
 ## Publishing (GitHub Pages)
@@ -46,10 +46,14 @@ whether a tablet has loaded the newest build.
 
 ## Make it yours
 
-| To change...                              | Edit                                                                                                                                     |
-| ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| The map                                   | `src/map.ts`. Draw it with letters!                                                                                                      |
-| Heroes, their skills, wild creatures      | `src/data.ts`                                                                                                                            |
-| Pictures and colours                      | `src/art.ts`. Or draw a 16×16 PNG (e.g. in [Piskel](https://www.piskelapp.com/)), save it in `public/assets/` and point the entry at it. |
-| Walking speed, how often creatures appear | top of `src/overworld.ts`                                                                                                                |
-| What happens in a battle                  | `src/battle.ts` (there are no rules yet!)                                                                                                |
+| To change...                                        | Edit                                                                                                                                     |
+| --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| The map                                             | `src/map.ts`. Draw it with letters!                                                                                                      |
+| Heroes, their skills and stats                      | `src/heroes.ts`                                                                                                                          |
+| How levels work (EP needed, what a new level gives) | bottom of `src/heroes.ts`                                                                                                                |
+| Wild creatures                                      | `src/creatures.ts`                                                                                                                       |
+| What each skill means                               | `src/skills.ts`, and which tiles need which skill (`needs: "Schwimmen"`) in `src/map.ts`                                                 |
+| Pictures and colours                                | `src/art.ts`. Or draw a 16×16 PNG (e.g. in [Piskel](https://www.piskelapp.com/)), save it in `public/assets/` and point the entry at it. |
+| How often creatures appear                          | top of `src/overworld.ts`                                                                                                                |
+| What happens in a battle                            | `src/battle.ts`                                                                                                                          |
+| Wording of messages and buttons                     | `src/text.ts`                                                                                                                            |
