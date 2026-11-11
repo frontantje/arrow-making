@@ -23,7 +23,7 @@ export type StatName = keyof Hero["stats"];
 export const party: Hero[] = [
   {
     name: "Flippy",
-    art: "hero1",
+    art: "flippy",
     skills: ["Fliegen"],
     level: 1,
     xp: 0,
@@ -31,7 +31,7 @@ export const party: Hero[] = [
   },
   {
     name: "Kämpfer",
-    art: "hero2",
+    art: "kaempfer",
     skills: [],
     level: 1,
     xp: 0,
@@ -39,7 +39,7 @@ export const party: Hero[] = [
   },
   {
     name: "Wanderer",
-    art: "hero3",
+    art: "wanderer",
     skills: ["Singen"],
     level: 1,
     xp: 0,
@@ -47,7 +47,7 @@ export const party: Hero[] = [
   },
   {
     name: "Sucher",
-    art: "hero4",
+    art: "sucher",
     skills: ["Schwimmen", "Tauchen"],
     level: 1,
     xp: 0,

@@ -14,7 +14,7 @@ export type WildCreature = Creature & {
 export const wildCreatures: WildCreature[] = [
   {
     name: "Wildes ???",
-    art: "wild1",
+    art: "monster1",
     level: 1,
     stats: { hp: 10, strength: 2 },
   },

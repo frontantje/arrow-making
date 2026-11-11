@@ -1,11 +1,19 @@
-import { Assets, Graphics, Rectangle, Renderer, Texture } from "pixi.js";
+import {
+  Assets,
+  Container,
+  Graphics,
+  Rectangle,
+  Renderer,
+  Sprite,
+  Texture,
+} from "pixi.js";
 
 export const TILE = 16;
 
 type Shape = "tile" | "grass" | "rock" | "square" | "circle";
-type ArtSpec = { file: string } | { color: number; shape: Shape };
+type Placeholder = { color: number; shape: Shape };
 
-// placeholders drawn in code; for a real drawing use { file: "assets/<name>.png" } (16x16, in public/)
+// placeholders, used when there's no src/sprites/<name>.png
 export const ART = {
   floor: { color: 0x9bd36a, shape: "tile" },
   tallGrass: { color: 0x3f9b46, shape: "grass" },
@@ -13,24 +21,40 @@ export const ART = {
   water: { color: 0x4a90d9, shape: "tile" },
   rock: { color: 0x9a948c, shape: "rock" },
 
-  hero1: { color: 0xe8553e, shape: "square" },
-  hero2: { color: 0x3e7be8, shape: "square" },
-  hero3: { color: 0xe8c23e, shape: "square" },
-  hero4: { color: 0x8e3ee8, shape: "square" },
+  flippy: { color: 0xe8553e, shape: "square" },
+  kaempfer: { color: 0x3e7be8, shape: "square" },
+  wanderer: { color: 0xe8c23e, shape: "square" },
+  sucher: { color: 0x8e3ee8, shape: "square" },
 
-  wild1: { color: 0xa05cd6, shape: "circle" },
-} satisfies Record<string, ArtSpec>;
+  monster1: { color: 0xa05cd6, shape: "circle" },
+} satisfies Record<string, Placeholder>;
 
 export type ArtName = keyof typeof ART;
+
+const spriteUrls = new Map(
+  Object.entries(
+    import.meta.glob<string>("./sprites/*.png", {
+      eager: true,
+      query: "?url",
+      import: "default",
+    }),
+  ).map(([path, url]) => [
+    path.slice("./sprites/".length, -".png".length).toLowerCase(),
+    url,
+  ]),
+);
 
 const textures = new Map<ArtName, Texture>();
 
 export async function loadArt(renderer: Renderer) {
-  for (const [name, spec] of Object.entries(ART) as [ArtName, ArtSpec][]) {
-    const texture =
-      "file" in spec
-        ? await Assets.load<Texture>(spec.file)
-        : drawPlaceholder(renderer, spec.color, spec.shape);
+  for (const [name, placeholder] of Object.entries(ART) as [
+    ArtName,
+    Placeholder,
+  ][]) {
+    const url = spriteUrls.get(name.toLowerCase());
+    const texture = url
+      ? fitToTile(renderer, await Assets.load<Texture>(url))
+      : drawPlaceholder(renderer, placeholder);
     texture.source.scaleMode = "nearest";
     textures.set(name, texture);
   }
@@ -40,7 +64,23 @@ export function art(name: ArtName): Texture {
   return textures.get(name) ?? Texture.WHITE;
 }
 
-function drawPlaceholder(renderer: Renderer, color: number, shape: Shape) {
+// exports at 2x, 10x, ... are shrunk back to one tile
+function fitToTile(renderer: Renderer, texture: Texture) {
+  if (texture.width === TILE && texture.height === TILE) return texture;
+  texture.source.scaleMode = "nearest";
+  const scale = TILE / Math.max(texture.width, texture.height);
+  const sprite = new Sprite(texture);
+  sprite.scale.set(scale);
+  sprite.position.set(
+    (TILE - texture.width * scale) / 2,
+    TILE - texture.height * scale,
+  );
+  const holder = new Container();
+  holder.addChild(sprite);
+  return render(renderer, holder);
+}
+
+function drawPlaceholder(renderer: Renderer, { color, shape }: Placeholder) {
   const g = new Graphics();
 
   if (shape === "square" || shape === "circle") {
@@ -72,12 +112,16 @@ function drawPlaceholder(renderer: Renderer, color: number, shape: Shape) {
     }
   }
 
+  return render(renderer, g);
+}
+
+function render(renderer: Renderer, target: Container) {
   const texture = renderer.generateTexture({
-    target: g,
+    target,
     frame: new Rectangle(0, 0, TILE, TILE),
     resolution: 1,
     antialias: false,
   });
-  g.destroy();
+  target.destroy({ children: true });
   return texture;
 }

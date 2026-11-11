@@ -23,6 +23,30 @@ To play on a phone or tablet on the same Wi-Fi, run `npm run dev:wifi` and open 
 | Run away     | Tap "Weglaufen"                                    | X / Esc           |
 | Next message | Tap anywhere                                       | Z / Enter / Space |
 
+## Drawing sprites
+
+Every picture is a 16×16 PNG in `src/sprites/`, named after its entry in `src/art.ts`
+(`flippy.png`, `kaempfer.png`, `monster1.png`, …). If a file is missing, the game draws a
+coloured placeholder. Tiles work the same way (`wall.png`, `water.png`, `tallGrass.png`, …).
+
+**With Pixquare on the iPad:**
+
+1. Open a sprite from the **Arrow Making** folder in iCloud Drive and paint over it.
+2. Export as **PNG**, **size multiplier 1×**, **Trimming off**, and save it back to the same
+   folder ("Save to Files"). File names are forgiving: "Flippy 2.png" or "Kämpfer.png" work too.
+3. While `npm run dev:wifi` is running on the PC, new pictures are copied into `src/sprites/`
+   within a few seconds and the game reloads by itself.
+
+Commit `src/sprites/` to keep the pictures, and publish as usual.
+
+One-time setup on the PC: install iCloud for Windows, then create `.env.local` (not committed):
+
+```
+SPRITES_INBOX='C:/Users/<you>/iCloudDrive/Arrow Making'
+```
+
+When the dev server starts, sprites that aren't in that folder yet are copied there.
+
 ## Publishing (GitHub Pages)
 
 Publishing only happens when you start it: on GitHub, open the **Actions** tab, pick
@@ -46,14 +70,14 @@ whether a tablet has loaded the newest build.
 
 ## Make it yours
 
-| To change...                                        | Edit                                                                                                                                     |
-| --------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| The map                                             | `src/map.ts`. Draw it with letters!                                                                                                      |
-| Heroes, their skills and stats                      | `src/heroes.ts`                                                                                                                          |
-| How levels work (EP needed, what a new level gives) | bottom of `src/heroes.ts`                                                                                                                |
-| Wild creatures                                      | `src/creatures.ts`                                                                                                                       |
-| What each skill means                               | `src/skills.ts`, and which tiles need which skill (`needs: "Schwimmen"`) in `src/map.ts`                                                 |
-| Pictures and colours                                | `src/art.ts`. Or draw a 16×16 PNG (e.g. in [Piskel](https://www.piskelapp.com/)), save it in `public/assets/` and point the entry at it. |
-| How often creatures appear                          | top of `src/overworld.ts`                                                                                                                |
-| What happens in a battle                            | `src/battle.ts`                                                                                                                          |
-| Wording of messages and buttons                     | `src/text.ts`                                                                                                                            |
+| To change...                                        | Edit                                                                                     |
+| --------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| The map                                             | `src/map.ts`. Draw it with letters!                                                      |
+| Heroes, their skills and stats                      | `src/heroes.ts`                                                                          |
+| How levels work (EP needed, what a new level gives) | bottom of `src/heroes.ts`                                                                |
+| Wild creatures                                      | `src/creatures.ts`                                                                       |
+| What each skill means                               | `src/skills.ts`, and which tiles need which skill (`needs: "Schwimmen"`) in `src/map.ts` |
+| Pictures                                            | Draw them! See "Drawing sprites" below. Placeholder colours are in `src/art.ts`.         |
+| How often creatures appear                          | top of `src/overworld.ts`                                                                |
+| What happens in a battle                            | `src/battle.ts`                                                                          |
+| Wording of messages and buttons                     | `src/text.ts`                                                                            |

@@ -11,6 +11,10 @@ numbers follow [Semantic Versioning](https://semver.org/).
 - Creatures fight back: after each attack, a creature that's still standing hits the hero with its strength.
 - Heroes have LP, shown as bars under the portraits and above the hero in battle. A new level also gives LP +2.
 - A hero at 0 LP wakes up at the start (`@`) with full LP.
+- Drawn sprites: any `src/sprites/<name>.png` replaces that placeholder. Starter sprites for all
+  heroes and the monster.
+- Sprites drawn in Pixquare (or any app) and saved to a shared iCloud Drive folder show up in the
+  running game within seconds.
 
 ### Changed
 
