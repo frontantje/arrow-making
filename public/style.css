@@ -1,23 +1,22 @@
 body {
-    margin: 0;
-    padding: 0;
-    color: rgba(255, 255, 255, 0.87);
-    background-color: #000000;
-    overscroll-behavior: none;
-    user-select: none;
-    -webkit-user-select: none;
-    -webkit-touch-callout: none;
+  margin: 0;
+  padding: 0;
+  color: rgba(255, 255, 255, 0.87);
+  background-color: #000000;
+  overscroll-behavior: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 
 #app {
-    width: 100%;
-    height: 100vh;
-    height: 100dvh;
-    overflow: hidden;
+  width: 100%;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
 }
 
 canvas {
-    display: block;
-    /* let the game handle touches instead of the browser scrolling/zooming */
-    touch-action: none;
+  display: block;
+  touch-action: none;
 }

@@ -1,14 +1,14 @@
 import { Application, Container, Text, TextureSource } from "pixi.js";
 import { loadArt } from "./art";
 import { Battle } from "./battle";
+import { activeHero } from "./heroes";
 import { Input } from "./input";
 import { Overworld } from "./overworld";
 import type { Scene } from "./scene";
 
-// Pixel art: keep pixels sharp instead of blurry when they're scaled up.
 TextureSource.defaultOptions.scaleMode = "nearest";
 
-/** The shorter side of the screen shows at least this many art pixels (160 = 10 tiles). */
+// art pixels visible along the shorter screen side, at least
 const MIN_VIEW = 160;
 
 (async () => {
@@ -22,14 +22,13 @@ const MIN_VIEW = 160;
     autoDensity: true,
   });
   document.getElementById("pixi-container")!.appendChild(app.canvas);
-  // no "save image" menu when a finger is held down
+  // no "save image" menu on long press
   app.canvas.addEventListener("contextmenu", (e) => e.preventDefault());
 
   await loadArt(app.renderer);
 
   const input = new Input();
   const sceneLayer = new Container();
-  // which version is running, so you can tell if a tablet has the newest one
   const versionLabel = new Text({
     text: __VERSION__,
     style: { fill: 0xffffff, fontFamily: "monospace", fontSize: 12 },
@@ -44,7 +43,7 @@ const MIN_VIEW = 160;
   function layout() {
     const { width, height } = app.screen;
     size = { width, height };
-    // Scale art by whole numbers only, so every pixel stays the same size.
+    // whole numbers only, so every art pixel is the same size
     const pixelScale = Math.max(
       1,
       Math.floor(Math.min(width, height) / MIN_VIEW),
@@ -61,7 +60,9 @@ const MIN_VIEW = 160;
   }
 
   const overworld = new Overworld(input, (wild) => {
-    const battle = new Battle(input, wild, () => {
+    const hero = activeHero();
+    const battle = new Battle(input, hero, wild, (result) => {
+      if (result === "knockedOut") overworld.respawn(hero);
       showScene(overworld);
       battle.view.destroy({ children: true });
     });

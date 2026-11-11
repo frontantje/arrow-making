@@ -2,17 +2,19 @@ import { Container, Graphics, Rectangle, Sprite, Text } from "pixi.js";
 import { art, TILE } from "./art";
 import { xpReward, type WildCreature } from "./creatures";
 import {
-  activeHero,
   gainXp,
+  hpOf,
+  hurt,
   LEVEL_UP_BONUS,
-  switchHero,
   type Hero,
   type StatName,
 } from "./heroes";
 import type { Input } from "./input";
 import { PartyBar } from "./partyBar";
-import { textStyle, type Scene } from "./scene";
+import { drawLifeBar, textStyle, type Scene } from "./scene";
 import { TEXT } from "./text";
+
+export type BattleResult = "won" | "ran" | "knockedOut";
 
 const ACTIONS = [
   { id: "attack", label: TEXT.attackButton },
@@ -20,64 +22,61 @@ const ACTIONS = [
 ] as const;
 const BUTTON_HEIGHT = 40;
 const BUTTON_GAP = 8;
+const MESSAGE_HEIGHT = 120;
 
-/**
- * A simple battle: attack until the wild creature has no HP left, or run away.
- * Each attack takes the hero's strength away from the creature's HP,
- * so strong heroes win faster. Lucky heroes sometimes hit twice as hard.
- * Switch heroes any time with the party bar.
- * After a win, every hero who attacked gets EP and may reach a new level.
- * The creature doesn't fight back yet. That's still to be invented!
- *
- * Touch: tap a button, tap anywhere to continue.
- * Keyboard: up/down + Z to pick, X to run.
- */
+type BarArea = { x: number; y: number; width: number };
+
 export class Battle implements Scene {
   readonly view = new Container();
   private background = new Graphics();
   private foe: Sprite;
-  private hero = new Sprite();
-  private hpBar = new Graphics();
-  private hpText = new Text({
+  private heroSprite: Sprite;
+  private bars = new Graphics();
+  private foeStatus = new Text({
     text: "",
     style: { ...textStyle, fontSize: 14 },
   });
-  private hpBarArea = { x: 0, y: 0, width: 0 };
-  private partyBar = new PartyBar();
+  private heroStatus = new Text({
+    text: "",
+    style: { ...textStyle, fontSize: 14 },
+  });
+  private foeBar: BarArea = { x: 0, y: 0, width: 0 };
+  private heroBar: BarArea = { x: 0, y: 0, width: 0 };
+  private partyBar = new PartyBar(false);
   private message = new Text({ text: "", style: textStyle });
   private menu = new Container();
   private buttons: Graphics[];
   private buttonWidth = 300;
 
   private step: "intro" | "choose" | "outcome" = "intro";
+  private result: BattleResult = "won";
   private cursor = 0;
-  private hp: number;
-  private maxHp: number;
-  private shownHero: Hero | null = null;
-  /** Every hero who attacked in this battle. They all get EP if we win. */
-  private fighters = new Set<Hero>();
-  /** Messages still to show after the battle, one per tap. */
+  private foeHp: number;
+  private foeMaxHp: number;
   private afterBattle: string[] = [];
-  /** Taps are remembered here and dealt with in update(). */
+  // handled in update(), so the scene is never destroyed mid-event
   private tapped: number | "screen" | null = null;
 
   constructor(
     private input: Input,
+    private hero: Hero,
     private wild: WildCreature,
-    private onDone: () => void,
+    private onDone: (result: BattleResult) => void,
   ) {
-    this.maxHp = Math.max(1, wild.stats.hp);
-    this.hp = this.maxHp;
+    this.foeMaxHp = Math.max(1, wild.stats.hp);
+    this.foeHp = this.foeMaxHp;
     this.foe = new Sprite(art(wild.art));
-    this.foe.anchor.set(0.5, 1);
-    this.hero.anchor.set(0.5, 1);
-    this.hpText.anchor.set(0.5, 1);
+    this.heroSprite = new Sprite(art(hero.art));
+    for (const thing of [this.foe, this.heroSprite]) thing.anchor.set(0.5, 1);
+    for (const status of [this.foeStatus, this.heroStatus])
+      status.anchor.set(0.5, 1);
     this.view.addChild(
       this.background,
       this.foe,
-      this.hero,
-      this.hpBar,
-      this.hpText,
+      this.heroSprite,
+      this.bars,
+      this.foeStatus,
+      this.heroStatus,
       this.message,
       this.menu,
       this.partyBar,
@@ -104,22 +103,19 @@ export class Battle implements Scene {
 
     this.message.text = TEXT.appears(wild.name);
     this.menu.visible = false;
-    this.showHero();
   }
 
   update() {
     const { input } = this;
     const tapped = this.tapped;
     this.tapped = null;
-
-    if (input.wasPressed("switch")) switchHero();
-    if (activeHero() !== this.shownHero) this.showHero();
+    const next = tapped !== null || input.wasPressed("confirm");
 
     switch (this.step) {
       case "intro":
-        if (tapped !== null || input.wasPressed("confirm")) {
+        if (next) {
           this.step = "choose";
-          this.message.text = TEXT.whatWillDo(activeHero().name);
+          this.message.text = TEXT.whatWillDo(this.hero.name);
           this.menu.visible = true;
         }
         break;
@@ -134,19 +130,15 @@ export class Battle implements Scene {
 
         if (typeof tapped === "number") this.choose(tapped);
         else if (input.wasPressed("confirm")) this.choose(this.cursor);
-        else if (input.wasPressed("back")) this.choose(1); // run
+        else if (input.wasPressed("back")) this.choose(1);
         break;
       }
 
       case "outcome":
-        if (
-          tapped !== null ||
-          input.wasPressed("confirm") ||
-          input.wasPressed("back")
-        ) {
-          const next = this.afterBattle.shift();
-          if (next) this.message.text = next;
-          else this.onDone();
+        if (next || input.wasPressed("back")) {
+          const text = this.afterBattle.shift();
+          if (text) this.message.text = text;
+          else this.onDone(this.result);
         }
         break;
     }
@@ -157,8 +149,6 @@ export class Battle implements Scene {
     this.partyBar.position.set(12, 12);
     this.partyBar.layout(pixelScale);
 
-    // The "field" is where the creatures stand, the "panel" holds words and buttons.
-    // Side by side on wide screens, one above the other on tall ones.
     const wide = width > height;
     const field = wide
       ? { x: 0, y: 0, w: width * 0.55, h: height }
@@ -170,24 +160,29 @@ export class Battle implements Scene {
     this.background
       .clear()
       .rect(0, 0, width, height)
-      .fill(0x87c8e8) // sky
+      .fill(0x87c8e8)
       .rect(field.x, field.y + field.h * 0.5, field.w, field.h * 0.5)
-      .fill(0x9bd36a) // ground
+      .fill(0x9bd36a)
       .rect(panel.x, panel.y, panel.w, panel.h)
       .fill(0x2b2b3a);
 
-    const creatureScale = pixelScale * 2;
-    const creatureSize = TILE * creatureScale;
-    this.foe.scale.set(creatureScale);
+    const scale = pixelScale * 2;
+    const size = TILE * scale;
+    this.foe.scale.set(scale);
     this.foe.position.set(field.x + field.w * 0.7, field.y + field.h * 0.55);
-    this.hero.scale.set(creatureScale);
-    this.hero.position.set(field.x + field.w * 0.3, field.y + field.h * 0.85);
-    this.hpBarArea = {
-      x: this.foe.x - creatureSize / 2,
-      y: this.foe.y - creatureSize - 14,
-      width: creatureSize,
-    };
-    this.drawHpBar();
+    this.heroSprite.scale.set(scale);
+    this.heroSprite.position.set(
+      field.x + field.w * 0.3,
+      field.y + field.h * 0.85,
+    );
+    const above = (s: Sprite): BarArea => ({
+      x: s.x - size / 2,
+      y: s.y - size - 14,
+      width: size,
+    });
+    this.foeBar = above(this.foe);
+    this.heroBar = above(this.heroSprite);
+    this.drawBars();
 
     this.buttonWidth = Math.min(panel.w - 32, 420);
     const left = panel.x + (panel.w - this.buttonWidth) / 2;
@@ -197,7 +192,7 @@ export class Battle implements Scene {
     this.message.position.set(left, top);
     this.message.style.wordWrap = true;
     this.message.style.wordWrapWidth = this.buttonWidth;
-    this.menu.position.set(left, top + 64);
+    this.menu.position.set(left, top + MESSAGE_HEIGHT);
     this.drawButtons();
   }
 
@@ -206,75 +201,78 @@ export class Battle implements Scene {
       this.attack();
     } else {
       this.message.text = TEXT.ranAway;
-      this.finish();
+      this.end("ran");
     }
   }
 
   private attack() {
-    const hero = activeHero();
-    this.fighters.add(hero);
+    const { hero, wild } = this;
     const lucky = Math.random() < hero.stats.luck / 10;
     const damage = Math.max(0, hero.stats.strength) * (lucky ? 2 : 1);
-    this.hp = Math.max(0, this.hp - damage);
-    this.drawHpBar();
-    this.message.text = lucky
-      ? TEXT.luckyHit(hero.name, damage)
-      : TEXT.attacks(hero.name, damage);
-    if (this.hp === 0) {
-      this.message.text += `\n${TEXT.defeated(this.wild.name)}`;
+    this.foeHp = Math.max(0, this.foeHp - damage);
+    const lines = [
+      lucky
+        ? TEXT.luckyHit(hero.name, damage)
+        : TEXT.attacks(hero.name, damage),
+    ];
+
+    if (this.foeHp === 0) {
+      lines.push(TEXT.defeated(wild.name));
       this.foe.alpha = 0.3;
       this.giveXp();
-      this.finish();
-    }
-  }
-
-  /** Every hero who attacked gets EP, and maybe a new level. */
-  private giveXp() {
-    const xp = xpReward(this.wild);
-    if (xp <= 0) return;
-    const fighters = [...this.fighters];
-    this.afterBattle.push(
-      TEXT.gainedXp(
-        fighters.map((hero) => hero.name),
-        xp,
-      ),
-    );
-    const bonus = Object.entries(LEVEL_UP_BONUS)
-      .map(([stat, amount]) => TEXT.statBonus(stat as StatName, amount))
-      .join(", ");
-    for (const hero of fighters) {
-      for (const level of gainXp(hero, xp)) {
-        this.afterBattle.push(`${TEXT.levelUp(hero.name, level)}\n${bonus}`);
+      this.end("won");
+    } else {
+      const hit = Math.max(0, wild.stats.strength);
+      hurt(hero, hit);
+      lines.push(TEXT.hitsBack(wild.name, hero.name, hit));
+      if (hpOf(hero) === 0) {
+        lines.push(TEXT.knockedOut(hero.name));
+        this.heroSprite.alpha = 0.3;
+        this.afterBattle.push(TEXT.backToStart(hero.name));
+        this.end("knockedOut");
       }
     }
+
+    this.message.text = lines.join("\n");
+    this.drawBars();
     this.partyBar.refresh();
   }
 
-  private finish() {
+  private giveXp() {
+    const { hero } = this;
+    const xp = xpReward(this.wild);
+    if (xp <= 0) return;
+    this.afterBattle.push(TEXT.gainedXp([hero.name], xp));
+    const bonus = Object.entries(LEVEL_UP_BONUS)
+      .map(([stat, amount]) => TEXT.statBonus(stat as StatName, amount))
+      .join(", ");
+    for (const level of gainXp(hero, xp)) {
+      this.afterBattle.push(`${TEXT.levelUp(hero.name, level)}\n${bonus}`);
+    }
+  }
+
+  private end(result: BattleResult) {
+    this.result = result;
     this.menu.visible = false;
     this.step = "outcome";
   }
 
-  private showHero() {
-    const hero = activeHero();
-    this.shownHero = hero;
-    this.hero.texture = art(hero.art);
-    this.partyBar.refresh();
-    if (this.step === "choose") this.message.text = TEXT.whatWillDo(hero.name);
-  }
-
-  private drawHpBar() {
-    const { x, y, width } = this.hpBarArea;
-    const share = this.hp / this.maxHp;
-    const color = share > 0.5 ? 0x4caf50 : share > 0.25 ? 0xf5c542 : 0xe53935;
-    this.hpBar
-      .clear()
-      .rect(x - 2, y - 2, width + 4, 12)
-      .fill({ color: 0x000000, alpha: 0.5 })
-      .rect(x, y, width * share, 8)
-      .fill(color);
-    this.hpText.text = TEXT.foeStatus(this.wild.level, this.hp, this.maxHp);
-    this.hpText.position.set(x + width / 2, y - 4);
+  private drawBars() {
+    const { hero, wild } = this;
+    this.bars.clear();
+    const bar = (
+      area: BarArea,
+      label: Text,
+      level: number,
+      hp: number,
+      max: number,
+    ) => {
+      drawLifeBar(this.bars, area.x, area.y, area.width, 8, hp, max);
+      label.text = TEXT.status(level, hp, max);
+      label.position.set(area.x + area.width / 2, area.y - 4);
+    };
+    bar(this.foeBar, this.foeStatus, wild.level, this.foeHp, this.foeMaxHp);
+    bar(this.heroBar, this.heroStatus, hero.level, hpOf(hero), hero.stats.hp);
   }
 
   private drawButtons() {

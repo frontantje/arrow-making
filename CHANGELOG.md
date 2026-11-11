@@ -6,6 +6,20 @@ numbers follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- Creatures fight back: after each attack, a creature that's still standing hits the hero with its strength.
+- Heroes have LP, shown as bars under the portraits and above the hero in battle. A new level also gives LP +2.
+- A hero at 0 LP wakes up at the start (`@`) with full LP.
+
+### Changed
+
+- Every hero walks around on their own. They start next to each other at the `@`, and only the one you
+  picked (with the arrow above them) moves and fights. Pick a hero by tapping them on the map or in the
+  corner, or with Q.
+- Heroes can't walk through each other.
+- Battles are one hero against one creature: no switching during a battle, and the hero gets all the EP.
+
 ## [0.2.0] - 2026-11-11
 
 ### Added

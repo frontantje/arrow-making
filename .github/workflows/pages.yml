@@ -1,6 +1,3 @@
-# Only runs when started by hand: Actions tab → "Build and publish" → "Run workflow".
-# Checks the game (lint, type-check, build) on the chosen branch,
-# and publishes it to GitHub Pages if that branch is main.
 name: Build and publish
 
 on:

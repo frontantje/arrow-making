@@ -18,7 +18,7 @@ To play on a phone or tablet on the same Wi-Fi, run `npm run dev:wifi` and open 
 |              | Touch / mouse                                      | Keyboard          |
 | ------------ | -------------------------------------------------- | ----------------- |
 | Walk         | Tap where to go, or hold and drag to lead the hero | Arrows / WASD     |
-| Switch hero  | Tap a hero in the top corner                       | Q / Tab           |
+| Pick a hero  | Tap them on the map or in the top corner           | Q / Tab           |
 | Attack       | Tap "Angreifen"                                    | Up/Down, then Z   |
 | Run away     | Tap "Weglaufen"                                    | X / Esc           |
 | Next message | Tap anywhere                                       | Z / Enter / Space |

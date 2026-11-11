@@ -2,27 +2,24 @@ import type { Creature } from "./creatures";
 import type { Skill } from "./skills";
 
 export type Hero = Creature & {
-  /** What the hero can do. The list of all skills is in skills.ts. */
   skills: Skill[];
-  /** Goes up when the hero has collected enough EP (see the bottom of this file). */
   level: number;
-  /** Experience points (EP) collected towards the next level. */
+  // EP towards the next level
   xp: number;
   stats: {
-    /** How much damage one attack does. */
+    // full LP; current LP is hpOf(hero)
+    hp: number;
     strength: number;
-    /** How many tiles per second the hero walks. */
+    // tiles per second
     speed: number;
-    /** Chance of a lucky hit that does double damage: 1 = 10 %, 5 = 50 %, 10 = every hit. */
+    // 1 = 10 % chance of a double-damage hit
     luck: number;
-    /** How many things the hero can carry. (There are no things to pick up yet!) */
     inventorySlots: number;
   };
 };
 
 export type StatName = keyof Hero["stats"];
 
-/** Your team. Tap a hero in the corner (or press Q) to switch who's in front. */
 export const party: Hero[] = [
   {
     name: "Flippy",
@@ -30,7 +27,7 @@ export const party: Hero[] = [
     skills: ["Fliegen"],
     level: 1,
     xp: 0,
-    stats: { strength: 1, speed: 8, luck: 4, inventorySlots: 2 },
+    stats: { hp: 12, strength: 1, speed: 8, luck: 4, inventorySlots: 2 },
   },
   {
     name: "Kämpfer",
@@ -38,7 +35,7 @@ export const party: Hero[] = [
     skills: [],
     level: 1,
     xp: 0,
-    stats: { strength: 10, speed: 5, luck: 1, inventorySlots: 4 },
+    stats: { hp: 25, strength: 10, speed: 5, luck: 1, inventorySlots: 4 },
   },
   {
     name: "Wanderer",
@@ -46,7 +43,7 @@ export const party: Hero[] = [
     skills: ["Singen"],
     level: 1,
     xp: 0,
-    stats: { strength: 5, speed: 7, luck: 3, inventorySlots: 6 },
+    stats: { hp: 18, strength: 5, speed: 7, luck: 3, inventorySlots: 6 },
   },
   {
     name: "Sucher",
@@ -54,11 +51,9 @@ export const party: Hero[] = [
     skills: ["Schwimmen", "Tauchen"],
     level: 1,
     xp: 0,
-    stats: { strength: 7, speed: 6, luck: 2, inventorySlots: 5 },
+    stats: { hp: 20, strength: 7, speed: 6, luck: 2, inventorySlots: 5 },
   },
 ];
-
-// --- who's in front right now ---
 
 let activeIndex = 0;
 
@@ -70,24 +65,34 @@ export function setActiveHero(index: number) {
   activeIndex = index;
 }
 
-/** Puts the next hero in front. */
 export function switchHero() {
   activeIndex = (activeIndex + 1) % party.length;
 }
 
-// --- levels ---
+const damageTaken = new Map<Hero, number>();
 
-/** How many EP a hero needs to get from `level` to the next one: 10, 20, 30, ... */
+export function hpOf(hero: Hero) {
+  return Math.max(0, hero.stats.hp - (damageTaken.get(hero) ?? 0));
+}
+
+export function hurt(hero: Hero, damage: number) {
+  damageTaken.set(hero, (damageTaken.get(hero) ?? 0) + Math.max(0, damage));
+}
+
+export function heal(hero: Hero) {
+  damageTaken.delete(hero);
+}
+
 export function xpForNextLevel(level: number) {
   return Math.max(1, level * 10);
 }
 
-/** What a hero gets every time they reach a new level. */
 export const LEVEL_UP_BONUS: Partial<Record<StatName, number>> = {
+  hp: 2,
   strength: 1,
 };
 
-/** Gives a hero EP. Returns every new level they reached (empty if none). */
+// returns the levels reached
 export function gainXp(hero: Hero, xp: number): number[] {
   hero.xp += xp;
   const reached: number[] = [];

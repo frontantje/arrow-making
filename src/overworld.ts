@@ -10,6 +10,7 @@ import { art, TILE } from "./art";
 import { wildCreatures, type WildCreature } from "./creatures";
 import {
   activeHero,
+  heal,
   party,
   setActiveHero,
   switchHero,
@@ -29,10 +30,10 @@ import { PartyBar } from "./partyBar";
 import { textStyle, type Scene } from "./scene";
 import { TEXT } from "./text";
 
-/** Chance (0 to 1) of meeting a wild creature on each step in tall grass. */
+// per step in tall grass
 const ENCOUNTER_CHANCE = 0.12;
-/** How long a message like "Kämpfer kann nicht schwimmen!" stays on screen, in seconds. */
-const MESSAGE_TIME = 2;
+const MESSAGE_SECONDS = 2;
+const CAMERA_SPEED = 8;
 
 const STEP: Record<Direction, [number, number]> = {
   up: [0, -1],
@@ -43,30 +44,31 @@ const STEP: Record<Direction, [number, number]> = {
 
 type Point = { x: number; y: number };
 
-/**
- * Walking around the map.
- * Tap a tile to walk there, or keep your finger down and the hero follows it.
- * Arrow keys / WASD work too.
- */
+type Walker = {
+  hero: Hero;
+  sprite: Sprite;
+  tile: Point;
+  // t goes from 0 to 1 during a step
+  walking: { dx: number; dy: number; t: number } | null;
+};
+
 export class Overworld implements Scene {
   readonly view = new Container();
   private world = new Container();
-  private player = new Sprite();
+  private walkers: Walker[] = [];
   private marker = new Graphics();
-  private partyBar = new PartyBar();
+  private arrow = new Graphics();
+  private partyBar = new PartyBar(true);
   private message = new Text({ text: "", style: textStyle });
   private messageTime = 0;
+  private time = 0;
   private shownHero: Hero | null = null;
 
-  /** Where the player stands, in tiles. */
-  private tile = findStart();
-  /** The step the player is walking right now (t goes from 0 to 1). */
-  private walking: { dx: number; dy: number; t: number } | null = null;
-  /** The tile the player was told to walk to. */
   private target: Point | null = null;
-  /** The finger (or mouse) that is steering the player right now. */
   private steeringPointer: number | null = null;
   private screen = { width: 0, height: 0, scale: 1 };
+  // top-left corner of the view, in art pixels
+  private camera: Point | null = null;
 
   constructor(
     private input: Input,
@@ -86,16 +88,29 @@ export class Overworld implements Scene {
       alpha: 0.8,
       width: 1,
     });
-    this.world.addChild(this.marker, this.player);
+    this.world.addChild(this.marker);
+
+    for (const hero of party) {
+      const walker: Walker = {
+        hero,
+        sprite: new Sprite(art(hero.art)),
+        tile: { x: -1, y: -1 },
+        walking: null,
+      };
+      this.walkers.push(walker);
+      walker.tile = this.freeSpotNearStart(walker);
+      this.world.addChild(walker.sprite);
+    }
+
+    this.arrow.poly([-3, -4, 3, -4, 0, -1]).fill(0xffffff);
+    this.world.addChild(this.arrow);
+
     this.partyBar.position.set(12, 12);
     this.message.anchor.set(0.5, 1);
     this.view.addChild(this.world, this.partyBar, this.message);
 
     this.view.eventMode = "static";
-    this.view.on("pointerdown", (e) => {
-      this.steeringPointer = e.pointerId;
-      this.aimAt(e, true);
-    });
+    this.view.on("pointerdown", (e) => this.onTap(e));
     this.view.on("globalpointermove", (e) => {
       if (e.pointerId === this.steeringPointer) this.aimAt(e, false);
     });
@@ -106,47 +121,50 @@ export class Overworld implements Scene {
   }
 
   update(dt: number) {
+    this.time += dt;
     if (this.input.wasPressed("switch")) switchHero();
-    if (activeHero() !== this.shownHero) this.changeHero();
+    if (activeHero() !== this.shownHero) this.showHero();
 
-    if (this.walking) {
-      // each hero walks at their own speed (at least 1 tile per second)
-      this.walking.t += dt * Math.max(1, activeHero().stats.speed);
-      if (this.walking.t >= 1) {
-        this.tile.x += this.walking.dx;
-        this.tile.y += this.walking.dy;
-        this.walking = null;
-        if (
-          tileAt(this.tile.x, this.tile.y)?.wild &&
-          Math.random() < ENCOUNTER_CHANCE
-        ) {
-          this.target = null;
-          this.steeringPointer = null;
-          this.placePlayer();
-          this.onEncounter(
-            wildCreatures[Math.floor(Math.random() * wildCreatures.length)],
-          );
-          return;
-        }
+    // everyone finishes their step, but only the active hero starts new ones
+    for (const walker of this.walkers) {
+      if (!walker.walking) continue;
+      walker.walking.t += dt * Math.max(1, walker.hero.stats.speed);
+      if (walker.walking.t < 1) continue;
+      walker.tile.x += walker.walking.dx;
+      walker.tile.y += walker.walking.dy;
+      walker.walking = null;
+      if (
+        walker === this.me &&
+        tileAt(walker.tile.x, walker.tile.y)?.wild &&
+        Math.random() < ENCOUNTER_CHANCE
+      ) {
+        this.target = null;
+        this.steeringPointer = null;
+        this.place(dt);
+        this.onEncounter(
+          wildCreatures[Math.floor(Math.random() * wildCreatures.length)],
+        );
+        return;
       }
     }
 
-    if (!this.walking) {
+    const me = this.me;
+    if (!me.walking) {
       const keyDir = this.input.direction;
-      if (keyDir) this.target = null; // keys take over from taps
+      if (keyDir) this.target = null;
       const dir = keyDir ?? this.nextStepToTarget();
       if (dir) {
         const [dx, dy] = STEP[dir];
-        const x = this.tile.x + dx;
-        const y = this.tile.y + dy;
-        if (canEnter(x, y, activeHero())) this.walking = { dx, dy, t: 0 };
+        const x = me.tile.x + dx;
+        const y = me.tile.y + dy;
+        if (this.canStep(me, x, y)) me.walking = { dx, dy, t: 0 };
         else this.explainBlocked(x, y);
       }
     }
 
     this.messageTime = Math.max(0, this.messageTime - dt);
-    this.message.alpha = Math.min(1, this.messageTime / 0.3); // fade out
-    this.placePlayer();
+    this.message.alpha = Math.min(1, this.messageTime / 0.3);
+    this.place(dt);
   }
 
   resize(width: number, height: number, pixelScale: number) {
@@ -155,67 +173,128 @@ export class Overworld implements Scene {
     this.world.scale.set(pixelScale);
     this.partyBar.layout(pixelScale);
     this.message.position.set(width / 2, height - 24);
-    this.placePlayer();
+    this.camera = null; // snap instead of glide
+    this.place(0);
   }
 
-  /** Puts the newly picked hero in front, unless they can't be where we are. */
-  private changeHero() {
-    const hero = activeHero();
-    const spots = [this.tile];
-    if (this.walking) {
-      spots.push({
-        x: this.tile.x + this.walking.dx,
-        y: this.tile.y + this.walking.dy,
-      });
-    }
-    const missing = spots
-      .map((spot) => missingSkill(spot.x, spot.y, hero))
-      .find((skill) => skill !== null);
-    if (missing && this.shownHero) {
-      setActiveHero(party.indexOf(this.shownHero)); // switch back
-      this.say(TEXT.cannot(hero.name, missing));
+  respawn(hero: Hero) {
+    const walker = this.walkers.find((w) => w.hero === hero);
+    if (!walker) return;
+    walker.walking = null;
+    walker.tile = this.freeSpotNearStart(walker);
+    heal(hero);
+    setActiveHero(party.indexOf(hero));
+    this.target = null;
+    this.steeringPointer = null;
+  }
+
+  private get me(): Walker {
+    return this.walkers[party.indexOf(activeHero())];
+  }
+
+  private showHero() {
+    this.shownHero = activeHero();
+    this.target = null;
+    this.steeringPointer = null;
+    this.partyBar.refresh();
+  }
+
+  private onTap(e: FederatedPointerEvent) {
+    const { x, y } = this.tileUnder(e);
+    const other = this.heroAt(x, y, this.me);
+    if (other) {
+      setActiveHero(party.indexOf(other.hero));
       return;
     }
-    this.shownHero = hero;
-    this.player.texture = art(hero.art);
-    this.partyBar.refresh();
+    this.steeringPointer = e.pointerId;
+    this.aimAt(e, true);
+  }
+
+  private aimAt(e: FederatedPointerEvent, isTap: boolean) {
+    const { x, y } = this.tileUnder(e);
+    if (this.canStep(this.me, x, y)) this.target = { x, y };
+    else if (isTap) this.explainBlocked(x, y);
+  }
+
+  private tileUnder(e: FederatedPointerEvent): Point {
+    const p = this.world.toLocal(e.global);
+    return { x: Math.floor(p.x / TILE), y: Math.floor(p.y / TILE) };
+  }
+
+  // standing on, or stepping onto, the tile
+  private heroAt(x: number, y: number, except?: Walker) {
+    return this.walkers.find((w) => {
+      if (w === except) return false;
+      if (w.tile.x === x && w.tile.y === y) return true;
+      return (
+        w.walking !== null &&
+        w.tile.x + w.walking.dx === x &&
+        w.tile.y + w.walking.dy === y
+      );
+    });
+  }
+
+  private canStep(walker: Walker, x: number, y: number) {
+    return canEnter(x, y, walker.hero) && !this.heroAt(x, y, walker);
   }
 
   private say(text: string) {
     this.message.text = text;
-    this.messageTime = MESSAGE_TIME;
+    this.messageTime = MESSAGE_SECONDS;
   }
 
-  /** If the hero is missing a skill to go there, say so. */
   private explainBlocked(x: number, y: number) {
     const hero = activeHero();
     const missing = missingSkill(x, y, hero);
     if (missing) this.say(TEXT.cannot(hero.name, missing));
   }
 
-  /** Sets the walk target to the tile under the finger (if the hero can go there). */
-  private aimAt(e: FederatedPointerEvent, isTap: boolean) {
-    const p = this.world.toLocal(e.global);
-    const x = Math.floor(p.x / TILE);
-    const y = Math.floor(p.y / TILE);
-    if (canEnter(x, y, activeHero())) this.target = { x, y };
-    else if (isTap) this.explainBlocked(x, y);
-  }
-
   private nextStepToTarget(): Direction | null {
-    const { target, tile } = this;
+    const { target, me } = this;
     if (!target) return null;
-    const dir = firstStep(tile, target, activeHero());
-    if (!dir) this.target = null; // arrived, or can't get there
+    const dir = firstStep(me.tile, target, (x, y) => this.canStep(me, x, y));
+    if (!dir) this.target = null; // arrived, or no way there
     return dir;
   }
 
-  /** Moves the player sprite and keeps the camera on them. */
-  private placePlayer() {
-    const t = this.walking?.t ?? 0;
-    const x = (this.tile.x + (this.walking?.dx ?? 0) * t) * TILE;
-    const y = (this.tile.y + (this.walking?.dy ?? 0) * t) * TILE;
-    this.player.position.set(x, y);
+  private freeSpotNearStart(walker: Walker): Point {
+    const start = findStart();
+    const queue = [start];
+    const seen = new Set([`${start.x},${start.y}`]);
+    for (const spot of queue) {
+      if (
+        canEnter(spot.x, spot.y, walker.hero) &&
+        !this.heroAt(spot.x, spot.y, walker)
+      ) {
+        return spot;
+      }
+      for (const [dx, dy] of [
+        [1, 0],
+        [-1, 0],
+        [0, 1],
+        [0, -1],
+      ]) {
+        const next = { x: spot.x + dx, y: spot.y + dy };
+        const tile = tileAt(next.x, next.y);
+        if (!tile || tile.solid || seen.has(`${next.x},${next.y}`)) continue;
+        seen.add(`${next.x},${next.y}`);
+        queue.push(next);
+      }
+    }
+    return start;
+  }
+
+  private place(dt: number) {
+    for (const walker of this.walkers) {
+      const t = walker.walking?.t ?? 0;
+      walker.sprite.position.set(
+        (walker.tile.x + (walker.walking?.dx ?? 0) * t) * TILE,
+        (walker.tile.y + (walker.walking?.dy ?? 0) * t) * TILE,
+      );
+    }
+    const me = this.me.sprite;
+    const bob = Math.round(Math.sin(this.time * 6));
+    this.arrow.position.set(me.x + TILE / 2, me.y + 1 + bob);
 
     this.marker.visible = this.target !== null;
     if (this.target) {
@@ -223,28 +302,36 @@ export class Overworld implements Scene {
     }
 
     const { width, height, scale } = this.screen;
-    const camX = follow(x, width / scale, MAP_WIDTH * TILE);
-    const camY = follow(y, height / scale, MAP_HEIGHT * TILE);
+    const goal = {
+      x: follow(me.x, width / scale, MAP_WIDTH * TILE),
+      y: follow(me.y, height / scale, MAP_HEIGHT * TILE),
+    };
+    if (!this.camera) {
+      this.camera = goal;
+    } else {
+      const k = Math.min(1, dt * CAMERA_SPEED);
+      this.camera.x += (goal.x - this.camera.x) * k;
+      this.camera.y += (goal.y - this.camera.y) * k;
+    }
     this.world.position.set(
-      -Math.round(camX * scale),
-      -Math.round(camY * scale),
+      -Math.round(this.camera.x * scale),
+      -Math.round(this.camera.y * scale),
     );
   }
 }
 
-/** Camera position along one axis: centered on the player, but never past the map edge. */
-function follow(player: number, view: number, mapSize: number) {
+function follow(hero: number, view: number, mapSize: number) {
   if (mapSize <= view) return (mapSize - view) / 2;
-  const centered = player + TILE / 2 - view / 2;
+  const centered = hero + TILE / 2 - view / 2;
   return Math.min(Math.max(centered, 0), mapSize - view);
 }
 
-/**
- * The first step of the shortest walk from `from` to `to` for this hero,
- * going around anything they can't cross.
- * Returns null if they're already there or there's no way through.
- */
-function firstStep(from: Point, to: Point, hero: Hero): Direction | null {
+// first step of the shortest path; null if already there or there's no way
+function firstStep(
+  from: Point,
+  to: Point,
+  canGo: (x: number, y: number) => boolean,
+): Direction | null {
   const queue = [{ x: from.x, y: from.y, first: null as Direction | null }];
   const seen = new Set([`${from.x},${from.y}`]);
   for (const here of queue) {
@@ -252,7 +339,7 @@ function firstStep(from: Point, to: Point, hero: Hero): Direction | null {
     for (const [dir, [dx, dy]] of Object.entries(STEP)) {
       const x = here.x + dx;
       const y = here.y + dy;
-      if (seen.has(`${x},${y}`) || !canEnter(x, y, hero)) continue;
+      if (seen.has(`${x},${y}`) || !canGo(x, y)) continue;
       seen.add(`${x},${y}`);
       queue.push({ x, y, first: here.first ?? (dir as Direction) });
     }

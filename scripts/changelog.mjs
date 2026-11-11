@@ -1,5 +1,4 @@
-// Runs during `npm version`: turns the notes under "Unreleased" in CHANGELOG.md
-// into a section for the new version, dated today.
+// npm "version" hook: moves the Unreleased notes into a section for the new version
 import { readFileSync, writeFileSync } from "node:fs";
 
 const { version } = JSON.parse(readFileSync("package.json", "utf8"));
