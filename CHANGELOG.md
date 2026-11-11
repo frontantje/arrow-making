@@ -6,6 +6,8 @@ numbers follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-11
+
 ### Added
 
 - New heroes: Flippy, Kämpfer, Wanderer and Sucher.
