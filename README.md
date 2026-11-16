@@ -75,7 +75,8 @@ whether a tablet has loaded the newest build.
 | The map                                             | `src/map.ts`. Draw it with letters!                                                      |
 | Heroes, their skills and stats                      | `src/heroes.ts`                                                                          |
 | How levels work (EP needed, what a new level gives) | bottom of `src/heroes.ts`                                                                |
-| Wild creatures                                      | `src/creatures.ts`                                                                       |
+| Stat boosts on some ground (e.g. stronger in water) | `boosts` of a hero in `src/heroes.ts`; each tile's `terrain` is in `src/map.ts`          |
+| Wild creatures, where they live, how luck picks one | `src/creatures.ts`, and which tiles have creatures (`wild: true`) in `src/map.ts`        |
 | What each skill means                               | `src/skills.ts`, and which tiles need which skill (`needs: "Schwimmen"`) in `src/map.ts` |
 | Pictures                                            | Draw them! See "Drawing sprites" below. Placeholder colours are in `src/art.ts`.         |
 | How often creatures appear                          | top of `src/overworld.ts`                                                                |

@@ -6,6 +6,8 @@ import {
   hpOf,
   hurt,
   LEVEL_UP_BONUS,
+  statOf,
+  terrainOf,
   type Hero,
   type StatName,
 } from "./heroes";
@@ -157,14 +159,13 @@ export class Battle implements Scene {
       ? { x: field.w, y: 0, w: width - field.w, h: height }
       : { x: 0, y: field.h, w: width, h: height - field.h };
 
-    this.background
-      .clear()
-      .rect(0, 0, width, height)
-      .fill(0x87c8e8)
-      .rect(field.x, field.y + field.h * 0.5, field.w, field.h * 0.5)
-      .fill(0x9bd36a)
-      .rect(panel.x, panel.y, panel.w, panel.h)
-      .fill(0x2b2b3a);
+    this.background.clear().rect(0, 0, width, height).fill(0x87c8e8);
+    if (terrainOf(this.hero) !== "water") {
+      this.background
+        .rect(field.x, field.y + field.h * 0.5, field.w, field.h * 0.5)
+        .fill(0x9bd36a);
+    }
+    this.background.rect(panel.x, panel.y, panel.w, panel.h).fill(0x2b2b3a);
 
     const scale = pixelScale * 2;
     const size = TILE * scale;
@@ -207,8 +208,8 @@ export class Battle implements Scene {
 
   private attack() {
     const { hero, wild } = this;
-    const lucky = Math.random() < hero.stats.luck / 10;
-    const damage = Math.max(0, hero.stats.strength) * (lucky ? 2 : 1);
+    const lucky = Math.random() < statOf(hero, "luck") / 10;
+    const damage = Math.max(0, statOf(hero, "strength")) * (lucky ? 2 : 1);
     this.foeHp = Math.max(0, this.foeHp - damage);
     const lines = [
       lucky

@@ -12,7 +12,10 @@ export const TEXT = {
   cannot: (hero: string, skill: string) =>
     `${hero} kann nicht ${skill.toLowerCase()}!`,
 
-  stat: (stat: StatName, value: number) => `${STAT_NAMES[stat]} ${value}`,
+  // "Stärke 30 (+10)" while a boost applies
+  stat: (stat: StatName, value: number, boost = 0) =>
+    `${STAT_NAMES[stat]} ${value + boost}` +
+    (boost ? ` (${boost > 0 ? "+" : ""}${boost})` : ""),
   level: (level: number, xp: number, needed: number) =>
     `Level ${level} · EP ${xp}/${needed}`,
   hp: (hp: number, max: number) => `LP ${hp}/${max}`,

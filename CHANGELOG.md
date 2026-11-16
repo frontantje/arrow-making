@@ -15,9 +15,17 @@ numbers follow [Semantic Versioning](https://semver.org/).
   heroes and the monster.
 - Sprites drawn in Pixquare (or any app) and saved to a shared iCloud Drive folder show up in the
   running game within seconds.
+- Terrain boosts: a hero can get extra Stärke, Tempo or Glück while standing on a kind of ground.
+  Sucher gets Stärke +10 and Tempo +2 in the water. The corner shows it, e.g. "Stärke 30 (+10)".
+- Creatures: Glibber and Robo in the tall grass, and Blubb, who only lives in the water. Swimmers can
+  now meet creatures in the lake. Battles in the water have a plain blue background.
 
 ### Changed
 
+- New hero stats: everyone has more LP, more Stärke and a bigger Rucksack, but walks slower.
+  Kämpfer is the toughest and slowest.
+- Glück now also means fewer encounters (10 % fewer per point) and weaker creatures: for every 2 points
+  the game rolls again and the weakest creature (LP + Stärke) appears.
 - Every hero walks around on their own. They start next to each other at the `@`, and only the one you
   picked (with the arrow above them) moves and fights. Pick a hero by tapping them on the map or in the
   corner, or with Q.

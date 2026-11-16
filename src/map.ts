@@ -17,8 +17,11 @@ export const MAP = [
   "####################",
 ];
 
+export type Terrain = "land" | "grass" | "water" | "rock";
+
 type TileInfo = {
   art: ArtName;
+  terrain?: Terrain;
   solid?: boolean;
   needs?: Skill;
   wild?: boolean;
@@ -26,11 +29,11 @@ type TileInfo = {
 
 export const TILES: Record<string, TileInfo> = {
   "#": { art: "wall", solid: true },
-  ".": { art: "floor" },
-  "@": { art: "floor" },
-  ",": { art: "tallGrass", wild: true },
-  "~": { art: "water", needs: "Schwimmen" },
-  "^": { art: "rock", needs: "Fliegen" },
+  ".": { art: "floor", terrain: "land" },
+  "@": { art: "floor", terrain: "land" },
+  ",": { art: "tallGrass", terrain: "grass", wild: true },
+  "~": { art: "water", terrain: "water", needs: "Schwimmen", wild: true },
+  "^": { art: "rock", terrain: "rock", needs: "Fliegen" },
 };
 
 export function tileAt(x: number, y: number): TileInfo | undefined {

@@ -2,10 +2,12 @@ import { Container, Graphics, Sprite, Text } from "pixi.js";
 import { art, TILE } from "./art";
 import {
   activeHero,
+  boostOf,
   hpOf,
   party,
   setActiveHero,
   xpForNextLevel,
+  type StatName,
 } from "./heroes";
 import { drawLifeBar, textStyle } from "./scene";
 import { TEXT } from "./text";
@@ -75,15 +77,12 @@ export class PartyBar extends Container {
     });
 
     this.nameText.text = hero.name;
-    const { hp, strength, speed, luck, inventorySlots } = hero.stats;
+    const stat = (name: StatName) =>
+      TEXT.stat(name, hero.stats[name], boostOf(hero, name));
     this.statsText.text = [
       TEXT.level(hero.level, hero.xp, xpForNextLevel(hero.level)),
-      `${TEXT.hp(hpOf(hero), hp)} · ${TEXT.stat("strength", strength)}`,
-      [
-        TEXT.stat("luck", luck),
-        TEXT.stat("speed", speed),
-        TEXT.stat("inventorySlots", inventorySlots),
-      ].join(" · "),
+      `${TEXT.hp(hpOf(hero), hero.stats.hp)} · ${stat("strength")}`,
+      [stat("luck"), stat("speed"), stat("inventorySlots")].join(" · "),
       hero.skills.length > 0 ? TEXT.skills(hero.skills) : "",
     ]
       .filter(Boolean)

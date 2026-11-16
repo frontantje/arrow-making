@@ -1,4 +1,5 @@
 import type { Creature } from "./creatures";
+import type { Terrain } from "./map";
 import type { Skill } from "./skills";
 
 export type Hero = Creature & {
@@ -12,13 +13,16 @@ export type Hero = Creature & {
     strength: number;
     // tiles per second
     speed: number;
-    // 1 = 10 % chance of a double-damage hit
+    // per point: 10 % chance of a double-damage hit, fewer and weaker creatures
     luck: number;
     inventorySlots: number;
   };
+  // added to the stats while the hero stands on that terrain
+  boosts?: Partial<Record<Terrain, Partial<Record<BoostableStat, number>>>>;
 };
 
 export type StatName = keyof Hero["stats"];
+export type BoostableStat = "strength" | "speed" | "luck";
 
 export const party: Hero[] = [
   {
@@ -27,7 +31,7 @@ export const party: Hero[] = [
     skills: ["Fliegen"],
     level: 1,
     xp: 0,
-    stats: { hp: 12, strength: 1, speed: 8, luck: 4, inventorySlots: 2 },
+    stats: { hp: 25, strength: 15, speed: 5, luck: 4, inventorySlots: 6 },
   },
   {
     name: "Kämpfer",
@@ -35,7 +39,7 @@ export const party: Hero[] = [
     skills: [],
     level: 1,
     xp: 0,
-    stats: { hp: 25, strength: 10, speed: 5, luck: 1, inventorySlots: 4 },
+    stats: { hp: 60, strength: 40, speed: 2, luck: 1, inventorySlots: 10 },
   },
   {
     name: "Wanderer",
@@ -43,7 +47,7 @@ export const party: Hero[] = [
     skills: ["Singen"],
     level: 1,
     xp: 0,
-    stats: { hp: 18, strength: 5, speed: 7, luck: 3, inventorySlots: 6 },
+    stats: { hp: 30, strength: 25, speed: 4, luck: 3, inventorySlots: 10 },
   },
   {
     name: "Sucher",
@@ -51,7 +55,8 @@ export const party: Hero[] = [
     skills: ["Schwimmen", "Tauchen"],
     level: 1,
     xp: 0,
-    stats: { hp: 20, strength: 7, speed: 6, luck: 2, inventorySlots: 5 },
+    stats: { hp: 40, strength: 20, speed: 3, luck: 2, inventorySlots: 10 },
+    boosts: { water: { strength: 10, speed: 2 } },
   },
 ];
 
@@ -81,6 +86,28 @@ export function hurt(hero: Hero, damage: number) {
 
 export function heal(hero: Hero) {
   damageTaken.delete(hero);
+}
+
+const standingOn = new Map<Hero, Terrain>();
+
+export function standOn(hero: Hero, terrain: Terrain | undefined) {
+  if (terrain) standingOn.set(hero, terrain);
+  else standingOn.delete(hero);
+}
+
+export function terrainOf(hero: Hero): Terrain | undefined {
+  return standingOn.get(hero);
+}
+
+export function boostOf(hero: Hero, stat: StatName): number {
+  const terrain = terrainOf(hero);
+  const boosts: Partial<Record<StatName, number>> =
+    (terrain && hero.boosts?.[terrain]) || {};
+  return boosts[stat] ?? 0;
+}
+
+export function statOf(hero: Hero, stat: StatName): number {
+  return hero.stats[stat] + boostOf(hero, stat);
 }
 
 export function xpForNextLevel(level: number) {

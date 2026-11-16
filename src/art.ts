@@ -27,6 +27,8 @@ export const ART = {
   sucher: { color: 0x8e3ee8, shape: "square" },
 
   monster1: { color: 0xa05cd6, shape: "circle" },
+  robot1: { color: 0x3e7be8, shape: "square" },
+  wassermonster1: { color: 0x2fb8c9, shape: "circle" },
 } satisfies Record<string, Placeholder>;
 
 export type ArtName = keyof typeof ART;

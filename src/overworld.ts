@@ -7,12 +7,14 @@ import {
   Text,
 } from "pixi.js";
 import { art, TILE } from "./art";
-import { wildCreatures, type WildCreature } from "./creatures";
+import { pickCreature, type WildCreature } from "./creatures";
 import {
   activeHero,
   heal,
   party,
   setActiveHero,
+  standOn,
+  statOf,
   switchHero,
   type Hero,
 } from "./heroes";
@@ -30,8 +32,9 @@ import { PartyBar } from "./partyBar";
 import { textStyle, type Scene } from "./scene";
 import { TEXT } from "./text";
 
-// per step in tall grass
+// per step on a wild tile, minus 10 % for every point of luck
 const ENCOUNTER_CHANCE = 0.12;
+const FEWER_ENCOUNTERS_PER_LUCK = 0.1;
 const MESSAGE_SECONDS = 2;
 const CAMERA_SPEED = 8;
 
@@ -98,7 +101,7 @@ export class Overworld implements Scene {
         walking: null,
       };
       this.walkers.push(walker);
-      walker.tile = this.freeSpotNearStart(walker);
+      this.moveTo(walker, this.freeSpotNearStart(walker));
       this.world.addChild(walker.sprite);
     }
 
@@ -128,22 +131,27 @@ export class Overworld implements Scene {
     // everyone finishes their step, but only the active hero starts new ones
     for (const walker of this.walkers) {
       if (!walker.walking) continue;
-      walker.walking.t += dt * Math.max(1, walker.hero.stats.speed);
+      walker.walking.t += dt * Math.max(1, statOf(walker.hero, "speed"));
       if (walker.walking.t < 1) continue;
-      walker.tile.x += walker.walking.dx;
-      walker.tile.y += walker.walking.dy;
+      this.moveTo(walker, {
+        x: walker.tile.x + walker.walking.dx,
+        y: walker.tile.y + walker.walking.dy,
+      });
       walker.walking = null;
-      if (
-        walker === this.me &&
-        tileAt(walker.tile.x, walker.tile.y)?.wild &&
-        Math.random() < ENCOUNTER_CHANCE
-      ) {
+      if (walker !== this.me) continue;
+      const tile = tileAt(walker.tile.x, walker.tile.y);
+      const luck = statOf(walker.hero, "luck");
+      const chance =
+        ENCOUNTER_CHANCE * Math.max(0, 1 - luck * FEWER_ENCOUNTERS_PER_LUCK);
+      const wild =
+        tile?.wild && Math.random() < chance
+          ? pickCreature(tile.terrain, luck)
+          : null;
+      if (wild) {
         this.target = null;
         this.steeringPointer = null;
         this.place(dt);
-        this.onEncounter(
-          wildCreatures[Math.floor(Math.random() * wildCreatures.length)],
-        );
+        this.onEncounter(wild);
         return;
       }
     }
@@ -181,7 +189,7 @@ export class Overworld implements Scene {
     const walker = this.walkers.find((w) => w.hero === hero);
     if (!walker) return;
     walker.walking = null;
-    walker.tile = this.freeSpotNearStart(walker);
+    this.moveTo(walker, this.freeSpotNearStart(walker));
     heal(hero);
     setActiveHero(party.indexOf(hero));
     this.target = null;
@@ -190,6 +198,12 @@ export class Overworld implements Scene {
 
   private get me(): Walker {
     return this.walkers[party.indexOf(activeHero())];
+  }
+
+  private moveTo(walker: Walker, tile: Point) {
+    walker.tile = tile;
+    standOn(walker.hero, tileAt(tile.x, tile.y)?.terrain);
+    if (walker === this.me) this.partyBar.refresh();
   }
 
   private showHero() {
