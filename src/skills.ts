@@ -1,6 +1,6 @@
 // shown in the game: use German verbs, as in "Kämpfer kann nicht schwimmen!"
 export const SKILLS = {
-  Fliegen: "kann über Felsen fliegen",
+  Fliegen: "kann über Felsen und andere Helden fliegen",
   Schwimmen: "kann durchs Wasser schwimmen",
   Singen: "macht noch nichts",
   Tauchen: "macht noch nichts",

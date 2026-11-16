@@ -106,7 +106,9 @@ export class Overworld implements Scene {
     }
 
     this.arrow.poly([-3, -4, 3, -4, 0, -1]).fill(0xffffff);
+    this.arrow.zIndex = 3;
     this.world.addChild(this.arrow);
+    this.world.sortableChildren = true;
 
     this.partyBar.position.set(12, 12);
     this.message.anchor.set(0.5, 1);
@@ -133,11 +135,15 @@ export class Overworld implements Scene {
       if (!walker.walking) continue;
       walker.walking.t += dt * Math.max(1, statOf(walker.hero, "speed"));
       if (walker.walking.t < 1) continue;
-      this.moveTo(walker, {
-        x: walker.tile.x + walker.walking.dx,
-        y: walker.tile.y + walker.walking.dy,
-      });
+      const { dx, dy, t } = walker.walking;
+      this.moveTo(walker, { x: walker.tile.x + dx, y: walker.tile.y + dy });
       walker.walking = null;
+      if (this.heroAt(walker.tile.x, walker.tile.y, walker)) {
+        if (this.landing(walker, walker.tile, dx, dy)) {
+          walker.walking = { dx, dy, t: t - 1 };
+        }
+        continue;
+      }
       if (walker !== this.me) continue;
       const tile = tileAt(walker.tile.x, walker.tile.y);
       const luck = statOf(walker.hero, "luck");
@@ -163,10 +169,8 @@ export class Overworld implements Scene {
       const dir = keyDir ?? this.nextStepToTarget();
       if (dir) {
         const [dx, dy] = STEP[dir];
-        const x = me.tile.x + dx;
-        const y = me.tile.y + dy;
-        if (this.canStep(me, x, y)) me.walking = { dx, dy, t: 0 };
-        else this.explainBlocked(x, y);
+        if (this.landing(me, me.tile, dx, dy)) me.walking = { dx, dy, t: 0 };
+        else this.explainBlocked(me.tile.x + dx, me.tile.y + dy);
       }
     }
 
@@ -226,7 +230,7 @@ export class Overworld implements Scene {
 
   private aimAt(e: FederatedPointerEvent, isTap: boolean) {
     const { x, y } = this.tileUnder(e);
-    if (this.canStep(this.me, x, y)) this.target = { x, y };
+    if (this.canLand(this.me, x, y)) this.target = { x, y };
     else if (isTap) this.explainBlocked(x, y);
   }
 
@@ -248,8 +252,21 @@ export class Overworld implements Scene {
     });
   }
 
-  private canStep(walker: Walker, x: number, y: number) {
+  private canLand(walker: Walker, x: number, y: number) {
     return canEnter(x, y, walker.hero) && !this.heroAt(x, y, walker);
+  }
+
+  // where a step ends: heroes with Fliegen pass over other heroes in a straight line
+  private landing(walker: Walker, from: Point, dx: number, dy: number) {
+    const flies = walker.hero.skills.includes("Fliegen");
+    let { x, y } = from;
+    for (;;) {
+      x += dx;
+      y += dy;
+      if (!canEnter(x, y, walker.hero)) return null;
+      if (!this.heroAt(x, y, walker)) return { x, y };
+      if (!flies) return null;
+    }
   }
 
   private say(text: string) {
@@ -266,7 +283,9 @@ export class Overworld implements Scene {
   private nextStepToTarget(): Direction | null {
     const { target, me } = this;
     if (!target) return null;
-    const dir = firstStep(me.tile, target, (x, y) => this.canStep(me, x, y));
+    const dir = firstStep(me.tile, target, (from, dx, dy) =>
+      this.landing(me, from, dx, dy),
+    );
     if (!dir) this.target = null; // arrived, or no way there
     return dir;
   }
@@ -305,6 +324,8 @@ export class Overworld implements Scene {
         (walker.tile.x + (walker.walking?.dx ?? 0) * t) * TILE,
         (walker.tile.y + (walker.walking?.dy ?? 0) * t) * TILE,
       );
+      // the active hero, e.g. while flying over someone, stays on top
+      walker.sprite.zIndex = walker === this.me ? 2 : 1;
     }
     const me = this.me.sprite;
     const bob = Math.round(Math.sin(this.time * 6));
@@ -344,18 +365,17 @@ function follow(hero: number, view: number, mapSize: number) {
 function firstStep(
   from: Point,
   to: Point,
-  canGo: (x: number, y: number) => boolean,
+  landing: (from: Point, dx: number, dy: number) => Point | null,
 ): Direction | null {
   const queue = [{ x: from.x, y: from.y, first: null as Direction | null }];
   const seen = new Set([`${from.x},${from.y}`]);
   for (const here of queue) {
     if (here.x === to.x && here.y === to.y) return here.first;
     for (const [dir, [dx, dy]] of Object.entries(STEP)) {
-      const x = here.x + dx;
-      const y = here.y + dy;
-      if (seen.has(`${x},${y}`) || !canGo(x, y)) continue;
-      seen.add(`${x},${y}`);
-      queue.push({ x, y, first: here.first ?? (dir as Direction) });
+      const next = landing(here, dx, dy);
+      if (!next || seen.has(`${next.x},${next.y}`)) continue;
+      seen.add(`${next.x},${next.y}`);
+      queue.push({ ...next, first: here.first ?? (dir as Direction) });
     }
   }
   return null;

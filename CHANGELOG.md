@@ -6,6 +6,11 @@ numbers follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+
+- Heroes with **Fliegen** fly over other heroes in a straight line, but can't land on them. Tapping a
+  spot uses these hops too.
+
 ## [0.3.0] - 2026-11-16
 
 ### Added
