@@ -6,6 +6,8 @@ numbers follow [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-11-16
+
 ### Changed
 
 - Heroes with **Fliegen** fly over other heroes in a straight line, but can't land on them. Tapping a
